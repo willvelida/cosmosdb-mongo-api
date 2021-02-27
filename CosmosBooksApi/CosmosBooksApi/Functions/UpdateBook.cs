@@ -48,9 +48,9 @@ namespace CosmosBooksApi.Functions
                 Book updatedBook = new Book
                 {
                     Id = id,
-                    BookName = bookToUpdate.BookName,
+                    BookName = updateBookRequest.BookName,
                     Author = updateBookRequest.Author,
-                    Category = updateBookRequest.Category,
+                    Category = bookToUpdate.Category,
                     Price = updateBookRequest.Price
                 };
 

@@ -11,8 +11,11 @@ namespace CosmosBooksApi.Models
 
         [BsonElement("name")]
         public string BookName { get; set; }
+        [BsonElement("price")]
         public decimal Price { get; set; }
+        [BsonElement("category")]
         public string Category { get; set; }
+        [BsonElement("author")]
         public string Author { get; set; }
     }
 }
