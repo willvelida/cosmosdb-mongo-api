@@ -35,6 +35,7 @@ namespace CosmosBooksApi.Functions
 
                 if (book == null)
                 {
+                    _logger.LogWarning($"Book with id: {id} doesn't exist.");
                     result = new StatusCodeResult(StatusCodes.Status404NotFound);
                 }
 

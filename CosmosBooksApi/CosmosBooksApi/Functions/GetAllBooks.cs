@@ -34,6 +34,7 @@ namespace CosmosBooksApi.Functions
 
                 if (books == null)
                 {
+                    _logger.LogWarning("No books found!");
                     result = new StatusCodeResult(StatusCodes.Status404NotFound);
                 }
 
