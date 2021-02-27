@@ -11,36 +11,35 @@ using CosmosBooksApi.Repositories;
 
 namespace CosmosBooksApi.Functions
 {
-    public class GetBookById
+    public class GetAllBooks
     {
-        private readonly ILogger<GetBookById> _logger;
+        private readonly ILogger<GetAllBooks> _logger;
         private readonly IBookRepository _bookRepository;
 
-        public GetBookById(
-            ILogger<GetBookById> logger,
+        public GetAllBooks(
+            ILogger<GetAllBooks> logger,
             IBookRepository bookRepository)
         {
             _logger = logger;
             _bookRepository = bookRepository;
         }
 
-        [FunctionName(nameof(GetBookById))]
+        [FunctionName(nameof(GetAllBooks))]
         public async Task<IActionResult> Run(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "Book/{id}")] HttpRequest req,
-            string id)
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "Books")] HttpRequest req)
         {
             IActionResult result;
 
             try
             {
-                var book = await _bookRepository.GetBook(id);
+                var books = await _bookRepository.GetBooks();
 
-                if (book == null)
+                if (books == null)
                 {
                     result = new StatusCodeResult(StatusCodes.Status404NotFound);
                 }
 
-                result = new OkObjectResult(book);
+                result = new OkObjectResult(books);
             }
             catch (Exception ex)
             {
