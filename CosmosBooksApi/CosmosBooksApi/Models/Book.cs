@@ -7,7 +7,7 @@ namespace CosmosBooksApi.Models
     {
         [BsonId]
         [BsonRepresentation(BsonType.ObjectId)]
-        public string id { get; set; }
+        public string Id { get; set; }
 
         [BsonElement("name")]
         public string BookName { get; set; }

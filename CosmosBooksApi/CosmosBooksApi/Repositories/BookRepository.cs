@@ -22,14 +22,14 @@ namespace CosmosBooksApi.Repositories
             _books = _database.GetCollection<Book>(configuration["CollectionName"]);
         }
 
-        public async Task CreateBook(Book book)
+        public async Task CreateBook(Book bookIn)
         {
-            await _books.InsertOneAsync(book);
+            await _books.InsertOneAsync(bookIn);
         }
 
         public async Task<Book> GetBook(string id)
         {
-            var book = await _books.FindAsync(book => book.id == id);
+            var book = await _books.FindAsync(book => book.Id == id);
             return book.FirstOrDefault();
         }
 
@@ -39,19 +39,19 @@ namespace CosmosBooksApi.Repositories
             return books.ToList();
         }
 
-        public async Task RemoveBook(Book book)
+        public async Task RemoveBook(Book bookIn)
         {
-            await _books.DeleteOneAsync(book => book.id == book.id);
+            await _books.DeleteOneAsync(book => book.Id == bookIn.Id);
         }
 
         public async Task RemoveBookById(string id)
         {
-            await _books.DeleteOneAsync(book => book.id == id);
+            await _books.DeleteOneAsync(book => book.Id == id);
         }
 
-        public async Task UpdateBook(string id, Book book)
+        public async Task UpdateBook(string id, Book bookIn)
         {
-            await _books.ReplaceOneAsync(book => book.id == id, book);
+            await _books.ReplaceOneAsync(book => book.Id == id, bookIn);
         }
     }
 }

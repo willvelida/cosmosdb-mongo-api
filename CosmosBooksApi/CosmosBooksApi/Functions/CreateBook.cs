@@ -40,7 +40,7 @@ namespace CosmosBooksApi.Functions
 
                 var book = new Book
                 {
-                    id = ObjectId.GenerateNewId().ToString(),
+                    Id = ObjectId.GenerateNewId().ToString(),
                     BookName = bookRequest.BookName,
                     Price = bookRequest.Price,
                     Category = bookRequest.Category,
