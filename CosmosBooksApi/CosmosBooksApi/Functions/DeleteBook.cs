@@ -1,4 +1,4 @@
-using CosmosBooksApi.Repositories;
+using CosmosBooksApi.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.WebJobs;
@@ -12,14 +12,14 @@ namespace CosmosBooksApi.Functions
     public class DeleteBook
     {
         private readonly ILogger<DeleteBook> _logger;
-        private readonly IBookRepository _bookRepository;
+        private readonly IBookService _bookService;
 
         public DeleteBook(
             ILogger<DeleteBook> logger,
-            IBookRepository bookRepository)
+            IBookService bookService)
         {
             _logger = logger;
-            _bookRepository = bookRepository;
+            _bookService = bookService;
         }
 
         [FunctionName(nameof(DeleteBook))]
@@ -31,7 +31,7 @@ namespace CosmosBooksApi.Functions
 
             try
             {
-                var bookToDelete = await _bookRepository.GetBook(id);
+                var bookToDelete = await _bookService.GetBook(id);
 
                 if (bookToDelete == null)
                 {
@@ -39,7 +39,7 @@ namespace CosmosBooksApi.Functions
                     result = new StatusCodeResult(StatusCodes.Status404NotFound);
                 }
 
-                await _bookRepository.RemoveBook(bookToDelete);
+                await _bookService.RemoveBook(bookToDelete);
                 result = new StatusCodeResult(StatusCodes.Status204NoContent);
             }
             catch (Exception ex)

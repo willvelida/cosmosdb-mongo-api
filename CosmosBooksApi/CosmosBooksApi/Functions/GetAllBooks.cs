@@ -1,4 +1,4 @@
-using CosmosBooksApi.Repositories;
+using CosmosBooksApi.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.WebJobs;
@@ -12,14 +12,14 @@ namespace CosmosBooksApi.Functions
     public class GetAllBooks
     {
         private readonly ILogger<GetAllBooks> _logger;
-        private readonly IBookRepository _bookRepository;
+        private readonly IBookService _bookService;
 
         public GetAllBooks(
             ILogger<GetAllBooks> logger,
-            IBookRepository bookRepository)
+            IBookService bookService)
         {
             _logger = logger;
-            _bookRepository = bookRepository;
+            _bookService = bookService;
         }
 
         [FunctionName(nameof(GetAllBooks))]
@@ -30,7 +30,7 @@ namespace CosmosBooksApi.Functions
 
             try
             {
-                var books = await _bookRepository.GetBooks();
+                var books = await _bookService.GetBooks();
 
                 if (books == null)
                 {

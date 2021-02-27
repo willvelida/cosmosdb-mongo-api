@@ -1,5 +1,5 @@
 using CosmosBooksApi.Models;
-using CosmosBooksApi.Repositories;
+using CosmosBooksApi.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.WebJobs;
@@ -15,14 +15,14 @@ namespace CosmosBooksApi.Functions
     public class UpdateBook
     {
         private readonly ILogger<UpdateBook> _logger;
-        private readonly IBookRepository _bookRepository;
+        private readonly IBookService _bookService;
 
         public UpdateBook(
             ILogger<UpdateBook> logger,
-            IBookRepository bookRepository)
+            IBookService bookService)
         {
             _logger = logger;
-            _bookRepository = bookRepository;
+            _bookService = bookService;
         }
 
         [FunctionName(nameof(UpdateBook))]
@@ -34,7 +34,7 @@ namespace CosmosBooksApi.Functions
 
             try
             {
-                var bookToUpdate = await _bookRepository.GetBook(id);
+                var bookToUpdate = await _bookService.GetBook(id);
 
                 if (bookToUpdate == null)
                 {
@@ -55,7 +55,7 @@ namespace CosmosBooksApi.Functions
                     Price = updateBookRequest.Price
                 };
 
-                await _bookRepository.UpdateBook(id, updatedBook);
+                await _bookService.UpdateBook(id, updatedBook);
 
                 result = new StatusCodeResult(StatusCodes.Status202Accepted);
             }

@@ -1,5 +1,5 @@
 using CosmosBooksApi.Models;
-using CosmosBooksApi.Repositories;
+using CosmosBooksApi.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.WebJobs;
@@ -16,14 +16,14 @@ namespace CosmosBooksApi.Functions
     public class CreateBook
     {
         private readonly ILogger<CreateBook> _logger;
-        private readonly IBookRepository _bookRepository;
+        private readonly IBookService _bookService;
 
         public CreateBook(
             ILogger<CreateBook> logger,
-            IBookRepository bookRepository)
+            IBookService bookService)
         {
             _logger = logger;
-            _bookRepository = bookRepository;
+            _bookService = bookService;
         }
 
         [FunctionName(nameof(CreateBook))]
@@ -47,7 +47,7 @@ namespace CosmosBooksApi.Functions
                     Author = bookRequest.Author
                 };
 
-                await _bookRepository.CreateBook(book);
+                await _bookService.CreateBook(book);
 
                 result = new StatusCodeResult(StatusCodes.Status201Created);
             }

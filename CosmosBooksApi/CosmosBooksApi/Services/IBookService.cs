@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace CosmosBooksApi.Repositories
+namespace CosmosBooksApi.Services
 {
-    public interface IBookRepository
+    public interface IBookService
     {
         /// <summary>
         /// Get all books from the Books collection

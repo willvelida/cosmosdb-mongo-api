@@ -1,5 +1,5 @@
 ﻿using CosmosBooksApi;
-using CosmosBooksApi.Repositories;
+using CosmosBooksApi.Services;
 using Microsoft.Azure.Functions.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,7 +26,7 @@ namespace CosmosBooksApi
             settings.SslSettings = new SslSettings() { EnabledSslProtocols = SslProtocols.Tls12 };
 
             builder.Services.AddSingleton((s) => new MongoClient(settings));
-            builder.Services.AddTransient<IBookRepository, BookRepository>();
+            builder.Services.AddTransient<IBookService, BookService>();
         }
     }
 }

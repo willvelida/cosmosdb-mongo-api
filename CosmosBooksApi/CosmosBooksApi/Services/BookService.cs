@@ -5,15 +5,15 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace CosmosBooksApi.Repositories
+namespace CosmosBooksApi.Services
 {
-    public class BookRepository : IBookRepository
+    public class BookService : IBookService
     {
         private readonly MongoClient _mongoClient;
         private readonly IMongoDatabase _database;
         private readonly IMongoCollection<Book> _books;
 
-        public BookRepository(
+        public BookService(
             MongoClient mongoClient,
             IConfiguration configuration)
         {
