@@ -78,7 +78,40 @@ Before we start creating any of our Functions, we need to install the **MongoDB.
 
 Once that’s installed, let’s create a *Startup.cs* file that will instantiate our *MongoClient*:
 
-{% gist https://gist.github.com/willvelida/4969344888831aa2346e9a33297f5d8d %}
+```
+using CosmosBooksApi;
+using CosmosBooksApi.Services;
+using Microsoft.Azure.Functions.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using MongoDB.Driver;
+using System.IO;
+using System.Security.Authentication;
+
+[assembly: FunctionsStartup(typeof(Startup))]
+namespace CosmosBooksApi
+{
+    public class Startup : FunctionsStartup
+    {
+        public override void Configure(IFunctionsHostBuilder builder)
+        {
+            var config = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetCurrentDirectory())
+                .AddJsonFile("local.settings.json", optional: true, reloadOnChange: true)
+                .AddEnvironmentVariables()
+                .Build();
+
+            builder.Services.AddSingleton<IConfiguration>(config);
+
+            MongoClientSettings settings = MongoClientSettings.FromUrl(new MongoUrl(config["ConnectionString"]));
+            settings.SslSettings = new SslSettings() { EnabledSslProtocols = SslProtocols.Tls12 };
+
+            builder.Services.AddSingleton((s) => new MongoClient(settings));
+            builder.Services.AddTransient<IBookService, BookService>();
+        }
+    }
+}
+```
 
 Since v2 of Azure Functions, [we have support for Dependency Injection](https://docs.microsoft.com/en-us/azure/azure-functions/functions-dotnet-dependency-injection). This will help us instantiate our *MongoClient* as a Singleton, so we can share our *MongoClient* amongst all of our Functions rather than creating a new instance of our client every time we want to invoke our Functions.
 
@@ -90,7 +123,18 @@ We then create a new configuration of type *IConfiguration*. All this does is pi
 
 We can then set up our *MongoClient*. We start off by setting our connection string by passing in our *PRIMARY CONNECTION STRING* from earlier as a *MongoUrl()* object. Save this in your *local.settings.json* file. For reference, this is what my file looks like:
 
-{% gist https://gist.github.com/willvelida/d6d43a22fbb9de87c50452bbd7df51eb %}
+```
+{
+    "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet",
+    "ConnectionString": "<PRIMARY_CONNECTION_STRING>",
+    "DatabaseName": "BookstoreDB",
+    "CollectionName":  "Books"
+  }
+}
+```
 
 We can then pass the key of the setting (“**ConnectionString**”) into our *MongoUrl* object.
 
@@ -100,7 +144,29 @@ Once we’ve set up our *MongoClientSettings*, we can just pass this into our *M
 
 Now we need to create a basic class to represent our Book model. Let’s write the following:
 
-{% gist https://gist.github.com/willvelida/ad634c549641568136772252db8f42fa %}
+```
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
+
+namespace CosmosBooksApi.Models
+{
+    public class Book
+    {
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string Id { get; set; }
+
+        [BsonElement("name")]
+        public string BookName { get; set; }
+        [BsonElement("price")]
+        public decimal Price { get; set; }
+        [BsonElement("category")]
+        public string Category { get; set; }
+        [BsonElement("author")]
+        public string Author { get; set; }
+    }
+}
+```
 
 In this class, we have properties for the Book’s Id, name, price, category and author. The Id property has been annotated with the *BsonId* property to indicate that this will be the document’s primary key. We have also annotated the Id property with *[BsonRepresentation(BsonType.ObjectId)]* to pass our id as type string, rather than *ObjectId*. Mongo will handle the conversion from string to *ObjectId* for us.
 
@@ -108,11 +174,121 @@ The rest of our properties have been annotated with *[BsonElement()]*. This will
 
 Now we’re going to create a service that will that handle the logic that works with our Cosmos DB account. Let’s define an interface called *IBookService.cs*.
 
-{% gist https://gist.github.com/willvelida/ce6f0e88dc60e72931a8aeedd1a8b27a %}
+```
+using CosmosBooksApi.Models;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+namespace CosmosBooksApi.Services
+{
+    public interface IBookService
+    {
+        /// <summary>
+        /// Get all books from the Books collection
+        /// </summary>
+        /// <returns></returns>
+        Task<List<Book>> GetBooks();
+
+        /// <summary>
+        /// Get a book by its id from the Books collection
+        /// </summary>
+        /// <param name="id"></param>
+        /// <returns></returns>
+        Task<Book> GetBook(string id);
+
+        /// <summary>
+        /// Insert a book into the Books collection
+        /// </summary>
+        /// <param name="book"></param>
+        /// <returns></returns>
+        Task CreateBook(Book bookIn);
+
+        /// <summary>
+        /// Updates an existing book in the Books collection
+        /// </summary>
+        /// <param name="id"></param>
+        /// <param name="book"></param>
+        /// <returns></returns>
+        Task UpdateBook(string id, Book bookIn);
+
+        /// <summary>
+        /// Removes a book from the Books collection
+        /// </summary>
+        /// <param name="book"></param>
+        /// <returns></returns>
+        Task RemoveBook(Book bookIn);
+
+        /// <summary>
+        /// Removes a book with the specified id from the Books collection
+        /// </summary>
+        /// <param name="id"></param>
+        /// <returns></returns>
+        Task RemoveBookById(string id);
+    }
+}
+```
 
 This is just a simple CRUD interface that defines the contract that our service should implement. Now let’s implement this interface:
 
-{% gist https://gist.github.com/willvelida/b295e86d5e8bdc1932303d5bfdac0e71 %}
+```
+using CosmosBooksApi.Models;
+using Microsoft.Extensions.Configuration;
+using MongoDB.Driver;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace CosmosBooksApi.Services
+{
+    public class BookService : IBookService
+    {
+        private readonly MongoClient _mongoClient;
+        private readonly IMongoDatabase _database;
+        private readonly IMongoCollection<Book> _books;
+
+        public BookService(
+            MongoClient mongoClient,
+            IConfiguration configuration)
+        {
+            _mongoClient = mongoClient;
+            _database = _mongoClient.GetDatabase(configuration["DatabaseName"]);
+            _books = _database.GetCollection<Book>(configuration["CollectionName"]);
+        }
+
+        public async Task CreateBook(Book bookIn)
+        {
+            await _books.InsertOneAsync(bookIn);
+        }
+
+        public async Task<Book> GetBook(string id)
+        {
+            var book = await _books.FindAsync(book => book.Id == id);
+            return book.FirstOrDefault();
+        }
+
+        public async Task<List<Book>> GetBooks()
+        {
+            var books = await _books.FindAsync(book => true);
+            return books.ToList();
+        }
+
+        public async Task RemoveBook(Book bookIn)
+        {
+            await _books.DeleteOneAsync(book => book.Id == bookIn.Id);
+        }
+
+        public async Task RemoveBookById(string id)
+        {
+            await _books.DeleteOneAsync(book => book.Id == id);
+        }
+
+        public async Task UpdateBook(string id, Book bookIn)
+        {
+            await _books.ReplaceOneAsync(book => book.Id == id, bookIn);
+        }
+    }
+}
+```
 
 I’ve injected my dependencies to my *MongoClient* and *IConfiguration*, then I create my database and collection so I can perform operations against them. Lets explore the different methods one by one.
 
@@ -139,7 +315,71 @@ To create a new Function, we right-click our solution file and select ‘**Add N
 
 Let’s start with our *CreateBook* function. Here is the code:
 
-{% gist https://gist.github.com/willvelida/aa51a2f35ca35c69387e620939be16ca %}
+```
+using CosmosBooksApi.Models;
+using CosmosBooksApi.Services;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.Extensions.Logging;
+using MongoDB.Bson;
+using Newtonsoft.Json;
+using System;
+using System.IO;
+using System.Threading.Tasks;
+
+namespace CosmosBooksApi.Functions
+{
+    public class CreateBook
+    {
+        private readonly ILogger<CreateBook> _logger;
+        private readonly IBookService _bookService;
+
+        public CreateBook(
+            ILogger<CreateBook> logger,
+            IBookService bookService)
+        {
+            _logger = logger;
+            _bookService = bookService;
+        }
+
+        [FunctionName(nameof(CreateBook))]
+        public async Task<IActionResult> Run(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "Book")] HttpRequest req)
+        {
+            IActionResult result;
+
+            try
+            {
+                var incomingRequest = await new StreamReader(req.Body).ReadToEndAsync();
+
+                var bookRequest = JsonConvert.DeserializeObject<Book>(incomingRequest);
+
+                var book = new Book
+                {
+                    Id = ObjectId.GenerateNewId().ToString(),
+                    BookName = bookRequest.BookName,
+                    Price = bookRequest.Price,
+                    Category = bookRequest.Category,
+                    Author = bookRequest.Author
+                };
+
+                await _bookService.CreateBook(book);
+
+                result = new StatusCodeResult(StatusCodes.Status201Created);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Internal Server Error. Exception: {ex.Message}");
+                result = new StatusCodeResult(StatusCodes.Status500InternalServerError);
+            }
+
+            return result;
+        }
+    }
+}
+```
 
 Here we are injecting our *IBookService* and our *ILogger* into the function. We invoke this Function by making a post request to the ‘**/Book**’ Route. We take the incoming HttpRequest and Deserialize it into a Book object. We then insert the Book into our Books collection. If we’re successful, we get a 201 response (Created). If not, we’ll throw a 500 response.
 
@@ -147,7 +387,62 @@ It’s a bit of a dramatic response code. We would want to throw a different cod
 
 Now let’s take a look at the *DeleteBook* function:
 
-{% gist https://gist.github.com/willvelida/f84e1126b3eaf3018b2011d5a44c3894 %}
+```
+using CosmosBooksApi.Services;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Threading.Tasks;
+
+namespace CosmosBooksApi.Functions
+{
+    public class DeleteBook
+    {
+        private readonly ILogger<DeleteBook> _logger;
+        private readonly IBookService _bookService;
+
+        public DeleteBook(
+            ILogger<DeleteBook> logger,
+            IBookService bookService)
+        {
+            _logger = logger;
+            _bookService = bookService;
+        }
+
+        [FunctionName(nameof(DeleteBook))]
+        public async Task<IActionResult> Run(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "Book/{id}")] HttpRequest req,
+            string id)
+        {
+            IActionResult result;
+
+            try
+            {
+                var bookToDelete = await _bookService.GetBook(id);
+
+                if (bookToDelete == null)
+                {
+                    _logger.LogWarning($"Book with id: {id} doesn't exist.");
+                    result = new StatusCodeResult(StatusCodes.Status404NotFound);
+                }
+
+                await _bookService.RemoveBook(bookToDelete);
+                result = new StatusCodeResult(StatusCodes.Status204NoContent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Internal Server Error. Exception thrown: {ex.Message}");
+                result = new StatusCodeResult(StatusCodes.Status500InternalServerError);
+            }
+
+            return result;
+        }
+    }
+}
+```
 
 This time, we pass in an id to our Function (‘**/Book/id**’) to find the Book that we want to delete from our collection. We first look for the book using *IBookService* method *.GetBook(id)*. If we the book doesn’t exist, the Function will throw a 404 (not found) response.
 
@@ -155,17 +450,196 @@ If we can find the book, we then pass this book into our *RemoveBook(book)* meth
 
 Here is the code for the *GetAllBooks* function:
 
-{% gist https://gist.github.com/willvelida/729481c3cd43f40c4eef12e587edc568 %}
+```
+using CosmosBooksApi.Services;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Threading.Tasks;
+
+namespace CosmosBooksApi.Functions
+{
+    public class GetAllBooks
+    {
+        private readonly ILogger<GetAllBooks> _logger;
+        private readonly IBookService _bookService;
+
+        public GetAllBooks(
+            ILogger<GetAllBooks> logger,
+            IBookService bookService)
+        {
+            _logger = logger;
+            _bookService = bookService;
+        }
+
+        [FunctionName(nameof(GetAllBooks))]
+        public async Task<IActionResult> Run(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "Books")] HttpRequest req)
+        {
+            IActionResult result;
+
+            try
+            {
+                var books = await _bookService.GetBooks();
+
+                if (books == null)
+                {
+                    _logger.LogWarning("No books found!");
+                    result = new StatusCodeResult(StatusCodes.Status404NotFound);
+                }
+
+                result = new OkObjectResult(books);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Internal Server Error. Exception thrown: {ex.Message}");
+                result = new StatusCodeResult(StatusCodes.Status500InternalServerError);
+            }
+
+            return result;
+        }
+    }
+}
+```
 
 In this function, we simply make a GET request to the ‘**/Books**’ route. This Function will call the *.GetBooks()* method on our *IBookService* to retrieve all the books in our collection. If there are no books, we throw 404. If there are books returned to us, the function will return these as an array back to the user.
 
 Our *GetBookById* function is similar to our *GetAllBooks* function, but this time we pass the id of the Book that we want to return to us:
 
-{% gist https://gist.github.com/willvelida/91335eee5df267d28a48c1ce63c9ef8b %}
+```
+using CosmosBooksApi.Services;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Threading.Tasks;
+
+namespace CosmosBooksApi.Functions
+{
+    public class GetBookById
+    {
+        private readonly ILogger<GetBookById> _logger;
+        private readonly IBookService _bookService;
+
+        public GetBookById(
+            ILogger<GetBookById> logger,
+            IBookService bookService)
+        {
+            _logger = logger;
+            _bookService = bookService;
+        }
+
+        [FunctionName(nameof(GetBookById))]
+        public async Task<IActionResult> Run(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "Book/{id}")] HttpRequest req,
+            string id)
+        {
+            IActionResult result;
+
+            try
+            {
+                var book = await _bookService.GetBook(id);
+
+                if (book == null)
+                {
+                    _logger.LogWarning($"Book with id: {id} doesn't exist.");
+                    result = new StatusCodeResult(StatusCodes.Status404NotFound);
+                }
+
+                result = new OkObjectResult(book);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Internal Server Error. Exception thrown: {ex.Message}");
+                result = new StatusCodeResult(StatusCodes.Status500InternalServerError);
+            }
+
+            return result;
+        }
+    }
+}
+```
 
 We also pass an id to our *UpdateBook* function. We first make a call to our *.GetBook(id)* method to find the book we want to update. Once we’ve found the book, we then read the incoming request and deserialize it into a Book object. We then use the deserialized request to update our Book object and then pass this object into out *.UpdateBook()* method along with the id that we used to invoke the Function.
 
-{% gist https://gist.github.com/willvelida/67c043800b2e0f0b05c41dbaf3bbd2f8 %}
+```
+using CosmosBooksApi.Models;
+using CosmosBooksApi.Services;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using System;
+using System.IO;
+using System.Threading.Tasks;
+
+namespace CosmosBooksApi.Functions
+{
+    public class UpdateBook
+    {
+        private readonly ILogger<UpdateBook> _logger;
+        private readonly IBookService _bookService;
+
+        public UpdateBook(
+            ILogger<UpdateBook> logger,
+            IBookService bookService)
+        {
+            _logger = logger;
+            _bookService = bookService;
+        }
+
+        [FunctionName(nameof(UpdateBook))]
+        public async Task<IActionResult> Run(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "Book/{id}")] HttpRequest req,
+            string id)
+        {
+            IActionResult result;
+
+            try
+            {
+                var bookToUpdate = await _bookService.GetBook(id);
+
+                if (bookToUpdate == null)
+                {
+                    _logger.LogWarning($"Book with id: {id} doesn't exist.");
+                    result = new StatusCodeResult(StatusCodes.Status404NotFound);
+                }
+
+                var input = await new StreamReader(req.Body).ReadToEndAsync();
+
+                var updateBookRequest = JsonConvert.DeserializeObject<Book>(input);
+
+                Book updatedBook = new Book
+                {
+                    Id = id,
+                    BookName = updateBookRequest.BookName,
+                    Author = updateBookRequest.Author,
+                    Category = bookToUpdate.Category,
+                    Price = updateBookRequest.Price
+                };
+
+                await _bookService.UpdateBook(id, updatedBook);
+
+                result = new StatusCodeResult(StatusCodes.Status202Accepted);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Internal Server Error: {ex.Message}");
+                result = new StatusCodeResult(StatusCodes.Status500InternalServerError);
+            }
+
+            return result;
+        }
+    }
+}
+```
 
 ## Testing our Function
 
